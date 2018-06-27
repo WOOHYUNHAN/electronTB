@@ -6,8 +6,7 @@ from numpy.linalg import *
 import numpy as np
 import matplotlib.pyplot as plt
 import cmath
-from matplotlib.collections import LineCollection
-import matplotlib.cm as cm
+import datetime as dt
 #from numeric import *
 
 
@@ -508,7 +507,7 @@ class ManybodyInteraction_MFT:
         LCONV = False
         sc_index = 0
         while (sc_index < max_steps):
-            ### setting orderpara_info
+            ### prepare orderpara_info and calculate total energy
             self.orderpara_info = [] # initialize
             for i in range(len(self.MB_interaction_info)):
                 temp = [self.MB_interaction_info[i][0], self.MB_interaction_info[i][1], self.MB_interaction_info[i][2], self.MB_interaction_info[i][3]*old_orderpara_set[self.MB_interaction_info[i][4]]]
@@ -546,25 +545,36 @@ class ManybodyInteraction_MFT:
             error = new_orderpara_set - old_orderpara_set
             
             temp_line_error = ''
+            temp_line_order_parameter = ''
             for i in range(len(error)):
                 temp_line_error += str(np.abs(error[i])) + ' '
-            print temp_line_error
-
+                temp_line_order_parameter += str(new_orderpara_set[i]) + ' '
+            #print temp_line_error
+            print temp_line_order_parameter
             if np.all(np.abs(error) < threshold):
                 LCONV = True
             if LCONV:
                 break
+
+            ### calculate total energy
+
+            self.calculate_total_energy()
             
             ### prepare next values by using error
 
             next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
-
             old_orderpara_set = next_orderpara_set
-
             sc_index += 1
 
 
         ### step 3: print process
+
+        #time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
+        #output_name = 'orderparameter_info_' + time_tag + '.out'
+        #g = open(output_name, 'w')
+        ### write output
+        #g.close()
+
         return 0
 
 
@@ -611,8 +621,8 @@ if __name__ == "__main__":
     MFT_test.set_order_parameter_type(0,0, [0,-1], 'complex')
     MFT_test.set_order_parameter_type(0,0, [-1,-1], 'complex')
 
-    V_1 = NN_hopping / 2.0
-    V_2 = NN_hopping / 2.0
+    V_1 = NN_hopping / 0.5
+    V_2 = NN_hopping / 0.5
 
     MFT_test.set_MB_interactions(1, 1, [0,0], V_1, 0)
     MFT_test.set_MB_interactions(0, 0, [0,0], V_1, 1)
