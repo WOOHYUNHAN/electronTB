@@ -468,8 +468,8 @@ class ManybodyInteraction_MFT:
         new_orderpara_set = np.zeros(len(self.orderpara_info), dtype=complex)
         beta = 1.0 / (temperature * self.boltzman_const)
         degeneracy = 2.0 / self.spin # spinor = True --> degeneracy = 1 spinor False --> degeneracy = 2
-        num_mesh = len(eigvec)
-        num_eig = len(eigvec[0])
+        num_mesh = len(eigval)
+        num_eig = len(eigval[0])
         #print num_mesh ; print num_eig
         new_orderpara_set = []
         for i in range(self.num_orderpara):
@@ -479,7 +479,7 @@ class ManybodyInteraction_MFT:
                 for k in range(num_mesh):
                     additional_phase_factor = np.exp( 1j*2 * np.pi * np.dot(q_vec_list[k], supercell_of_jatom))
                     #print q_vec_list[k], supercell_of_jatom, additional_phase_factor
-                    temp_order += (degeneracy * np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy))))) * additional_phase_factor
+                    temp_order += np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy)))) * additional_phase_factor
             if self.orderpara_type_info[i][3] == 'real' or self.orderpara_type_info[i][3] == 'Real' or self.orderpara_type_info[i][3] == 'REAL':
                 temp_order = np.real(temp_order) / num_mesh
                 #print 'here'
@@ -488,8 +488,17 @@ class ManybodyInteraction_MFT:
             new_orderpara_set.append(temp_order)
         return np.array(new_orderpara_set)
 
-    def calculate_total_energy(self):
-        return 0
+    def calculate_total_energy(self, eigval, Fermi_energy, temperature):
+        beta = 1.0 / (temperature * self.boltzman_const)
+        degeneracy = 2.0 / self.spin # spinor = True --> degeneracy = 1 spinor False --> degeneracy = 2
+        num_mesh = len(eigval)
+        num_eig = len(eigval[0])
+        total_energy = 0
+        for i in range(num_eig):
+            for j in range(num_mesh):
+                total_energy += degeneracy * eigval[j][i] * (1.0 / (1.0 + np.exp(beta * (eigval[j][i]-Fermi_energy))))
+        total_energy = total_energy / num_mesh
+        return total_energy
 
 
     def sc_solver(self, q_point_mesh, max_steps, threshold, filling_factor, temperature):
@@ -505,9 +514,10 @@ class ManybodyInteraction_MFT:
         old_orderpara_set = initial_random_orderpara_set
 
         LCONV = False
-        sc_index = 0
+        sc_index = 1
+        output_save = []
         while (sc_index < max_steps):
-            ### prepare orderpara_info and calculate total energy
+            ### prepare orderpara_info
             self.orderpara_info = [] # initialize
             for i in range(len(self.MB_interaction_info)):
                 temp = [self.MB_interaction_info[i][0], self.MB_interaction_info[i][1], self.MB_interaction_info[i][2], self.MB_interaction_info[i][3]*old_orderpara_set[self.MB_interaction_info[i][4]]]
@@ -540,26 +550,32 @@ class ManybodyInteraction_MFT:
 
             new_orderpara_set = self.calculate_new_orderpara_set(eigval, eigvec, q_vec_list, Fermi_energy, temperature)
 
-            ### compare new parameters with old paramters
+            ### calculate error between new parameters with old paramters
 
-            error = new_orderpara_set - old_orderpara_set
+            error = np.abs(new_orderpara_set - old_orderpara_set)
             
             temp_line_error = ''
             temp_line_order_parameter = ''
             for i in range(len(error)):
-                temp_line_error += str(np.abs(error[i])) + ' '
+                temp_line_error += str(error[i]) + ' '
                 temp_line_order_parameter += str(new_orderpara_set[i]) + ' '
             #print temp_line_error
-            print temp_line_order_parameter
+            #print temp_line_order_parameter
+            
+
+            ### calculate total energy
+
+            total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
+            #print total_energy
+
+            output_save.append([sc_index, Fermi_energy, total_energy, new_orderpara_set, error])
+            
+            ### SCF convergence test
+
             if np.all(np.abs(error) < threshold):
                 LCONV = True
             if LCONV:
                 break
-
-            ### calculate total energy
-
-            self.calculate_total_energy()
-            
             ### prepare next values by using error
 
             next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
@@ -569,11 +585,17 @@ class ManybodyInteraction_MFT:
 
         ### step 3: print process
 
-        #time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
-        #output_name = 'orderparameter_info_' + time_tag + '.out'
-        #g = open(output_name, 'w')
-        ### write output
-        #g.close()
+        time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
+        output_name = 'orderparameter_info_' + time_tag + '.out'
+        g = open(output_name, 'w')
+        #write output
+        for i in range(len(output_save)):
+            temp = str(output_save[i][0]) + '\t' + str(output_save[i][1]) + '\t' + str(output_save[i][2])
+            for j in range(len(output_save[i][3])):
+                temp += '\t' + str(output_save[i][3][j])
+            temp += '\n'
+            g.write(temp)
+        g.close()
 
         return 0
 
