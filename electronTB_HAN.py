@@ -465,7 +465,7 @@ class ManybodyInteraction_MFT:
         return Fermi_energy
 
 
-    def calculate_new_orderpara_set(self, eigval, eigvec, Fermi_energy, temperature):
+    def calculate_new_orderpara_set(self, eigval, eigvec, q_vec_list, Fermi_energy, temperature):
         new_orderpara_set = np.zeros(len(self.orderpara_info), dtype=complex)
         beta = 1.0 / (temperature * self.boltzman_const)
         degeneracy = 2.0 / self.spin # spinor = True --> degeneracy = 1 spinor False --> degeneracy = 2
@@ -478,8 +478,9 @@ class ManybodyInteraction_MFT:
             iatom = self.orderpara_type_info[i][0] ; jatom = self.orderpara_type_info[i][1]  ; supercell_of_jatom = self.orderpara_type_info[i][2]
             for j in range(num_eig):
                 for k in range(num_mesh):
-                    temp_order += degeneracy * np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy))))
-            
+                    additional_phase_factor = np.exp( 1j*2 * np.pi * np.dot(q_vec_list[k], supercell_of_jatom))
+                    #print q_vec_list[k], supercell_of_jatom, additional_phase_factor
+                    temp_order += (degeneracy * np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy))))) * additional_phase_factor
             if self.orderpara_type_info[i][3] == 'real' or self.orderpara_type_info[i][3] == 'Real' or self.orderpara_type_info[i][3] == 'REAL':
                 temp_order = np.real(temp_order) / num_mesh
                 #print 'here'
@@ -496,7 +497,7 @@ class ManybodyInteraction_MFT:
         ### step 1: prepare random order parameters
         self.num_orderpara = len(self.orderpara_type_info)
         initial_random_orderpara_set = np.random.rand(self.num_orderpara)
-        print initial_random_orderpara_set
+        #print initial_random_orderpara_set
 
         q_vec_list = self.get_qpoint_mesh(q_point_mesh)
 
@@ -538,12 +539,16 @@ class ManybodyInteraction_MFT:
 
             ### get new order parameters
 
-            new_orderpara_set = self.calculate_new_orderpara_set(eigval, eigvec, Fermi_energy, temperature)
+            new_orderpara_set = self.calculate_new_orderpara_set(eigval, eigvec, q_vec_list, Fermi_energy, temperature)
 
             ### compare new parameters with old paramters
 
             error = new_orderpara_set - old_orderpara_set
-            print error, old_orderpara_set
+            
+            temp_line_error = ''
+            for i in range(len(error)):
+                temp_line_error += str(np.abs(error[i])) + ' '
+            print temp_line_error
 
             if np.all(np.abs(error) < threshold):
                 LCONV = True
@@ -552,7 +557,7 @@ class ManybodyInteraction_MFT:
             
             ### prepare next values by using error
 
-            next_orderpara_set = old_orderpara_set * (1.0-error) + new_orderpara_set * error
+            next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
 
             old_orderpara_set = next_orderpara_set
 
@@ -597,10 +602,28 @@ if __name__ == "__main__":
 
     MFT_test.set_order_parameter_type(0,0, [0,0], 'real')
     MFT_test.set_order_parameter_type(1,1, [0,0], 'real')
-    #MFT_test.set_order_parameter_type(0,1, [0,0], 'complex')
 
-    MFT_test.set_MB_interactions(0, 0, [0,0], NN_hopping/2.0, 1)
-    MFT_test.set_MB_interactions(1, 1, [0,0], NN_hopping/2.0, 0)
+    MFT_test.set_order_parameter_type(1,1, [-1,0], 'complex')
+    MFT_test.set_order_parameter_type(1,1, [0,-1], 'complex')
+    MFT_test.set_order_parameter_type(1,1, [-1,-1], 'complex')
+
+    MFT_test.set_order_parameter_type(0,0, [-1,0], 'complex')
+    MFT_test.set_order_parameter_type(0,0, [0,-1], 'complex')
+    MFT_test.set_order_parameter_type(0,0, [-1,-1], 'complex')
+
+    V_1 = NN_hopping / 2.0
+    V_2 = NN_hopping / 2.0
+
+    MFT_test.set_MB_interactions(1, 1, [0,0], V_1, 0)
+    MFT_test.set_MB_interactions(0, 0, [0,0], V_1, 1)
+
+    MFT_test.set_MB_interactions(1, 1, [1,0], V_2, 2)
+    MFT_test.set_MB_interactions(1, 1, [0,1], V_2, 3)
+    MFT_test.set_MB_interactions(1, 1, [1,1], V_2, 4)
+
+    MFT_test.set_MB_interactions(0, 0, [1,0], V_2, 5)
+    MFT_test.set_MB_interactions(0, 0, [0,1], V_2, 6)
+    MFT_test.set_MB_interactions(0, 0, [1,1], V_2, 7)
 
     MFT_test.sc_solver(q_mesh, max_steps, threshold, filling_factor, temperature)
 
