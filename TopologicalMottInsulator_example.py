@@ -23,7 +23,7 @@ spinor = False
 TMI = electronTB(2, 2, spinor)
 TMI.set_geometry(lat, orb)
 TMI.set_onsite([.0,.0])
-NN_hopping = 1.0
+NN_hopping = -1.0
 TMI.set_hopping(0,1,[0.0,0.0],NN_hopping)
 TMI.set_hopping(0,1,[-1.0,0.0],NN_hopping)
 TMI.set_hopping(0,1,[0.0,1.0],NN_hopping)
@@ -46,34 +46,34 @@ temperature = 1e-9
 
 MFT_TMI = ManybodyInteraction_MFT(TMI)
 
-MFT_TMI.set_order_parameter_type(0,0, [0,0])
-MFT_TMI.set_order_parameter_type(1,1, [0,0])
+MFT_TMI.set_order_parameter_type(0,0, [0,0], 'real')
+MFT_TMI.set_order_parameter_type(1,1, [0,0], 'real')
 
-MFT_TMI.set_order_parameter_type(1,1, [-1,0])
-MFT_TMI.set_order_parameter_type(1,1, [0,-1])
-MFT_TMI.set_order_parameter_type(1,1, [-1,-1])
+MFT_TMI.set_order_parameter_type(1,1, [1,1], 'complex')
+#MFT_TMI.set_order_parameter_type(1,1, [0,1], 'complex')
+#MFT_TMI.set_order_parameter_type(1,1, [1,0], 'complex')
 
-MFT_TMI.set_order_parameter_type(0,0, [-1,0])
-MFT_TMI.set_order_parameter_type(0,0, [0,-1])
-MFT_TMI.set_order_parameter_type(0,0, [-1,-1])
+MFT_TMI.set_order_parameter_type(0,0, [-1,-1], 'complex')
+#MFT_TMI.set_order_parameter_type(0,0, [0,-1], 'complex')
+#MFT_TMI.set_order_parameter_type(0,0, [-1,0], 'complex')
 
-V_1 = NN_hopping / 1.0
-V_2 = NN_hopping / 1000000000000000000.0
+V_1 = -1 * NN_hopping / 100000000000000000.0
+V_2 = -1 * NN_hopping / 0.4
 
 MFT_TMI.set_MB_interactions(1, 1, [0,0], V_1, 0)
 MFT_TMI.set_MB_interactions(0, 0, [0,0], V_1, 1)
 
-#MFT_TMI.set_MB_interactions(1, 1, [1,0], V_2, 2)
-#MFT_TMI.set_MB_interactions(1, 1, [0,1], V_2, 3)
-#MFT_TMI.set_MB_interactions(1, 1, [1,1], V_2, 4)
+MFT_TMI.set_MB_interactions(1, 1, [-1,-1], V_2, 2)
+MFT_TMI.set_MB_interactions(1, 1, [0,1], V_2, 2)
+MFT_TMI.set_MB_interactions(1, 1, [1,0], V_2, 2)
 
-#MFT_TMI.set_MB_interactions(0, 0, [1,0], V_2, 5)
-#MFT_TMI.set_MB_interactions(0, 0, [0,1], V_2, 6)
-#MFT_TMI.set_MB_interactions(0, 0, [1,1], V_2, 7)
+MFT_TMI.set_MB_interactions(0, 0, [1,1], V_2, 3)
+MFT_TMI.set_MB_interactions(0, 0, [0,-1], V_2, 3)
+MFT_TMI.set_MB_interactions(0, 0, [-1,0], V_2, 3)
 
-MFT_TMI.sc_solver(q_mesh, max_steps, threshold, filling_factor, temperature)
-#print MFT_TMI.hopping_info
-#print MFT_TMI.merged_hopping_info
+for i in range(51):
+	MFT_TMI.sc_solver(q_mesh, max_steps, threshold, filling_factor, temperature)
+
 
 TMI_new = electronTB(2, 2, spinor)
 TMI_new.inherit_info(MFT_TMI)
