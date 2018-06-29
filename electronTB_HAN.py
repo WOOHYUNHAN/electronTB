@@ -84,6 +84,23 @@ class electronTB:
         print 'Not implemented yet'
         return 0
 
+    def inherit_info(self, parent_class):
+        if self.dimension != parent_class.dimension:
+            print "ERROR: please check dimension"
+            return 0
+        if self.num_atom != parent_class.num_atom:
+            print "ERROR: please check num_atom"
+            return 0
+        if self.spin != parent_class.spin:
+            print "ERROR: please check spinor"
+            return 0
+        self.onsite_info = parent_class.onsite_info
+        self.hopping_info = parent_class.hopping_info
+        self.recip_vec = parent_class.recip_vec
+        self.latt_vec = parent_class.latt_vec
+        self.atom_pos = parent_class.atom_pos
+        return 0
+
     def print_info(self):
         print 'Dimension = ' + str(self.dimension)
         print 'Number of atoms = ' + str(self.num_atom)
@@ -353,11 +370,11 @@ class ManybodyInteraction_MFT:
         self.atom_pos =TBmodel.atom_pos
         self.boltzman_const = 8.617343e-5 # eV/K
 
-    def set_order_parameter_type(self, iatom, jatom, supercell_of_jatom, value_type):
+    def set_order_parameter_type(self, iatom, jatom, supercell_of_jatom):
         if len(supercell_of_jatom) != self.dimension:
             print 'Please check either dimension or the size of supercell; They are different to each other'
             return 0
-        orderpara_type_temp = [iatom, jatom, supercell_of_jatom, value_type]
+        orderpara_type_temp = [iatom, jatom, supercell_of_jatom]
         self.orderpara_type_info.append(orderpara_type_temp)
         return 0
 
@@ -375,13 +392,13 @@ class ManybodyInteraction_MFT:
         proper_hopping_info = []  # [r_j-r_i, hopping]
 
         if iatom == jatom:
+            for i in range(len(self.onsite_info)):
+                proper_hopping_info.append([self.onsite_info[i][2], self.onsite_info[i][3]])
+
             for i in range(len(self.hopping_info)):
                 if (iatom == self.hopping_info[i][0] and iatom == self.hopping_info[i][1]):
                     diff_r = np.array(self.atom_pos[jatom]) + np.array(self.hopping_info[i][2]).transpose() - np.array(self.atom_pos[iatom])
                     proper_hopping_info.append([diff_r, self.hopping_info[i][3]])
-            
-            for i in range(len(self.onsite_info)):
-                proper_hopping_info.append([self.onsite_info[i][2], self.onsite_info[i][3]])
             
             for i in range(len(self.orderpara_info)):
                 if (iatom == self.orderpara_info[i][0] and iatom == self.orderpara_info[i][1]):
@@ -480,11 +497,7 @@ class ManybodyInteraction_MFT:
                     additional_phase_factor = np.exp( 1j*2 * np.pi * np.dot(q_vec_list[k], supercell_of_jatom))
                     #print q_vec_list[k], supercell_of_jatom, additional_phase_factor
                     temp_order += np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy)))) * additional_phase_factor
-            if self.orderpara_type_info[i][3] == 'real' or self.orderpara_type_info[i][3] == 'Real' or self.orderpara_type_info[i][3] == 'REAL':
-                temp_order = np.real(temp_order) / num_mesh
-                #print 'here'
-            else:
-                temp_order = temp_order / num_mesh
+            temp_order = temp_order / num_mesh
             new_orderpara_set.append(temp_order)
         return np.array(new_orderpara_set)
 
@@ -500,6 +513,11 @@ class ManybodyInteraction_MFT:
         total_energy = total_energy / num_mesh
         return total_energy
 
+    def impose_constraints(self):
+        '''
+        To be implemented ; it reduces the number of order parameters by imposing constraints which are physical meaningful
+        '''
+        return 0
 
     def sc_solver(self, q_point_mesh, max_steps, threshold, filling_factor, temperature):
         ### step 1: prepare random order parameters
@@ -545,6 +563,12 @@ class ManybodyInteraction_MFT:
             Fermi_energy = self.find_Fermi_energy_zerotemp(eigval, q_vec_list, filling_factor)
             #print Fermi_energy
 
+            ### calculate total energy
+
+            total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
+            #print total_energy
+
+            output_save.append([sc_index, Fermi_energy, total_energy, old_orderpara_set])
 
             ### get new order parameters
 
@@ -561,14 +585,12 @@ class ManybodyInteraction_MFT:
                 temp_line_order_parameter += str(new_orderpara_set[i]) + ' '
             #print temp_line_error
             #print temp_line_order_parameter
+            if sc_index == 1:
+                energy_error = total_energy
+            else:
+                energy_error = output_save[sc_index-1][2] - output_save[sc_index-2][2]
+            print 'SCF loop: ' + str(sc_index) + '/' + str(max_steps) + ' & ' + 'average SCF error: ' + str(np.average(error)) + ' & ' + 'energy error: ' + str(energy_error)
             
-
-            ### calculate total energy
-
-            total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
-            #print total_energy
-
-            output_save.append([sc_index, Fermi_energy, total_energy, new_orderpara_set, error])
             
             ### SCF convergence test
 
@@ -588,7 +610,7 @@ class ManybodyInteraction_MFT:
         time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
         output_name = 'orderparameter_info_' + time_tag + '.out'
         g = open(output_name, 'w')
-        #write output
+
         for i in range(len(output_save)):
             temp = str(output_save[i][0]) + '\t' + str(output_save[i][1]) + '\t' + str(output_save[i][2])
             for j in range(len(output_save[i][3])):
@@ -597,6 +619,21 @@ class ManybodyInteraction_MFT:
             g.write(temp)
         g.close()
 
+
+        ### step 4: merge orderpara_info into hopping_info
+
+        self.obtain_final_info()
+
+        self.hopping_info = self.merged_hopping_info
+
+        return 0
+
+    def obtain_final_info(self):
+        self.merged_hopping_info = []
+        for i in range(len(self.hopping_info)):
+            self.merged_hopping_info.append(self.hopping_info[i])
+        for i in range(len(self.orderpara_info)):
+            self.merged_hopping_info.append(self.orderpara_info[i])
         return 0
 
 
@@ -622,7 +659,7 @@ if __name__ == "__main__":
     #test.get_electron_band(q_path_line, q_spacing_line)
     #test.draw_electron_band()
     q_mesh = [30,30]
-    max_steps = 100
+    max_steps = 20
     threshold = 1e-4
     filling_factor = 1.0/2
     temperature = 1e-10
@@ -632,19 +669,19 @@ if __name__ == "__main__":
 
     MFT_test = ManybodyInteraction_MFT(test)
 
-    MFT_test.set_order_parameter_type(0,0, [0,0], 'real')
-    MFT_test.set_order_parameter_type(1,1, [0,0], 'real')
+    MFT_test.set_order_parameter_type(0,0, [0,0])
+    MFT_test.set_order_parameter_type(1,1, [0,0])
 
-    MFT_test.set_order_parameter_type(1,1, [-1,0], 'complex')
-    MFT_test.set_order_parameter_type(1,1, [0,-1], 'complex')
-    MFT_test.set_order_parameter_type(1,1, [-1,-1], 'complex')
+    MFT_test.set_order_parameter_type(1,1, [-1,0])
+    MFT_test.set_order_parameter_type(1,1, [0,-1])
+    MFT_test.set_order_parameter_type(1,1, [-1,-1])
 
-    MFT_test.set_order_parameter_type(0,0, [-1,0], 'complex')
-    MFT_test.set_order_parameter_type(0,0, [0,-1], 'complex')
-    MFT_test.set_order_parameter_type(0,0, [-1,-1], 'complex')
+    MFT_test.set_order_parameter_type(0,0, [-1,0])
+    MFT_test.set_order_parameter_type(0,0, [0,-1])
+    MFT_test.set_order_parameter_type(0,0, [-1,-1])
 
-    V_1 = NN_hopping / 0.5
-    V_2 = NN_hopping / 0.5
+    V_1 = NN_hopping / 0.2
+    V_2 = NN_hopping / 0.2
 
     MFT_test.set_MB_interactions(1, 1, [0,0], V_1, 0)
     MFT_test.set_MB_interactions(0, 0, [0,0], V_1, 1)
@@ -658,5 +695,6 @@ if __name__ == "__main__":
     MFT_test.set_MB_interactions(0, 0, [1,1], V_2, 7)
 
     MFT_test.sc_solver(q_mesh, max_steps, threshold, filling_factor, temperature)
+    #print MFT_test.obtain_final_info()
 
 
