@@ -355,6 +355,8 @@ class electronTB:
         plt.show()
         return 0
 
+
+
 class ManybodyInteraction_MFT:
     def __init__(self, TBmodel):
         self.dimension = TBmodel.dimension
@@ -370,11 +372,11 @@ class ManybodyInteraction_MFT:
         self.atom_pos =TBmodel.atom_pos
         self.boltzman_const = 8.617343e-5 # eV/K
 
-    def set_order_parameter_type(self, iatom, jatom, supercell_of_jatom):
+    def set_order_parameter_type(self, iatom, jatom, supercell_of_jatom, value_type):
         if len(supercell_of_jatom) != self.dimension:
             print 'Please check either dimension or the size of supercell; They are different to each other'
             return 0
-        orderpara_type_temp = [iatom, jatom, supercell_of_jatom]
+        orderpara_type_temp = [iatom, jatom, supercell_of_jatom, value_type]
         self.orderpara_type_info.append(orderpara_type_temp)
         return 0
 
@@ -494,7 +496,9 @@ class ManybodyInteraction_MFT:
             iatom = self.orderpara_type_info[i][0] ; jatom = self.orderpara_type_info[i][1]  ; supercell_of_jatom = self.orderpara_type_info[i][2]
             for j in range(num_eig):
                 for k in range(num_mesh):
-                    additional_phase_factor = np.exp( 1j*2 * np.pi * np.dot(q_vec_list[k], supercell_of_jatom))
+                    r = np.dot(self.latt_vec.transpose(), np.array(supercell_of_jatom).transpose())
+                    q = np.dot(self.recip_vec.transpose(), np.array(q_vec_list[k]).transpose())
+                    additional_phase_factor = np.exp(np.vdot(r, q) * 1j)
                     #print q_vec_list[k], supercell_of_jatom, additional_phase_factor
                     temp_order += np.dot(eigvec[k][j][iatom].conj().transpose(), eigvec[k][j][jatom]) * (1.0 / (1.0 + np.exp(beta * (eigval[k][j]-Fermi_energy)))) * additional_phase_factor
             temp_order = temp_order / num_mesh
@@ -522,8 +526,15 @@ class ManybodyInteraction_MFT:
     def sc_solver(self, q_point_mesh, max_steps, threshold, filling_factor, temperature):
         ### step 1: prepare random order parameters
         self.num_orderpara = len(self.orderpara_type_info)
-        initial_random_orderpara_set = np.random.rand(self.num_orderpara)
-        #print initial_random_orderpara_set
+        initial_random_orderpara_set = []
+        for i in range(self.num_orderpara):
+            if self.orderpara_type_info[i][3] == 'real' or self.orderpara_type_info[i][3] == 'Real' or self.orderpara_type_info[i][3] == 'REAL':        
+                temp = np.random.rand()
+                initial_random_orderpara_set.append(temp)    
+            elif self.orderpara_type_info[i][3] == 'complex' or self.orderpara_type_info[i][3] == 'Complex' or self.orderpara_type_info[i][3] == 'COMPLEX':
+                temp = np.random.rand() + 1.0j*np.random.rand()
+                initial_random_orderpara_set.append(temp)   
+        initial_random_orderpara_set = np.random.rand(self.num_orderpara)    
 
         q_vec_list = self.get_qpoint_mesh(q_point_mesh)
 
@@ -568,7 +579,8 @@ class ManybodyInteraction_MFT:
             total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
             #print total_energy
 
-            output_save.append([sc_index, Fermi_energy, total_energy, old_orderpara_set])
+            #output_save.append([sc_index, Fermi_energy, total_energy, old_orderpara_set])
+            output_save.append([sc_index, Fermi_energy, total_energy, np.abs(old_orderpara_set), np.angle(old_orderpara_set, deg=True)])
 
             ### get new order parameters
 
@@ -576,12 +588,12 @@ class ManybodyInteraction_MFT:
 
             ### calculate error between new parameters with old paramters
 
-            error = np.abs(new_orderpara_set - old_orderpara_set)
+            error = new_orderpara_set - old_orderpara_set
             
             temp_line_error = ''
             temp_line_order_parameter = ''
             for i in range(len(error)):
-                temp_line_error += str(error[i]) + ' '
+                temp_line_error += str(np.abs(error[i])) + ' '
                 temp_line_order_parameter += str(new_orderpara_set[i]) + ' '
             #print temp_line_error
             #print temp_line_order_parameter
@@ -589,7 +601,7 @@ class ManybodyInteraction_MFT:
                 energy_error = total_energy
             else:
                 energy_error = output_save[sc_index-1][2] - output_save[sc_index-2][2]
-            print 'SCF loop: ' + str(sc_index) + '/' + str(max_steps) + ' & ' + 'average SCF error: ' + str(np.average(error)) + ' & ' + 'energy error: ' + str(energy_error)
+            print 'SCF loop: ' + str(sc_index) + '/' + str(max_steps) + ' & ' + 'average SCF error: ' + str(np.average(np.abs(error))) + ' & ' + 'energy error: ' + str(energy_error)
             
             
             ### SCF convergence test
@@ -599,28 +611,58 @@ class ManybodyInteraction_MFT:
             if LCONV:
                 break
             ### prepare next values by using error
-
+            #next_orderpara_set_real = np.real(old_orderpara_set) * (1.0 - np.real(error)) + np.real(new_orderpara_set) * np.real(error)
+            #next_orderpara_set_imag = np.imag(old_orderpara_set) * (1.0 - np.imag(error)) + np.imag(new_orderpara_set) * np.imag(error)
+            #print next_orderpara_set_real, next_orderpara_set_imag
+            #next_orderpara_set = next_orderpara_set_real + 1.j * next_orderpara_set_imag
             next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
+
             old_orderpara_set = next_orderpara_set
             sc_index += 1
+
+        #### last_calculation
+        #self.orderpara_info = [] # initialize
+        #for i in range(len(self.MB_interaction_info)):
+        #    temp = [self.MB_interaction_info[i][0], self.MB_interaction_info[i][1], self.MB_interaction_info[i][2], self.MB_interaction_info[i][3]*new_orderpara_set[self.MB_interaction_info[i][4]]]
+        #    self.orderpara_info.append(temp)
+        #eigval = []
+        #eigvec = []
+        #for i in range(len(q_vec_list)):
+        #    #print 'Process: ' + str(i+1) +'/' + str(len(q_vec_list))
+        #    q_vec = q_vec_list[i]
+        #    H = self.construct_H_q_MFT(q_vec)
+        #    w1, v1 = np.linalg.eigh(H)
+        #    eigval_temp = []
+        #    eigvec_temp = []
+        #    for j in range(len(w1)):
+        #        eigval_temp.append(w1[j])
+        #        eigvec_temp.append(v1[:,j]) 
+        #    eigval.append(eigval_temp)
+        #    eigvec.append(eigvec_temp)
+        #Fermi_energy = self.find_Fermi_energy_zerotemp(eigval, q_vec_list, filling_factor)
+        #total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
+        ##output_save.append([sc_index, Fermi_energy, total_energy, new_orderpara_set])
+        #output_save.append([sc_index, Fermi_energy, total_energy, np.abs(old_orderpara_set), np.angle(old_orderpara_set, deg=True)])
+
 
 
         ### step 3: print process
 
-        time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
+        #time_tag = str(dt.datetime.now().year) + str(dt.datetime.now().month) + str(dt.datetime.now().day) + str(dt.datetime.now().hour) + str(dt.datetime.now().minute) +str(dt.datetime.now().second)
+        time_tag = '{0:04d}{1:02d}{2:02d}{3:02d}{4:02d}{5:02d}'.format(dt.datetime.now().year, dt.datetime.now().month, dt.datetime.now().day, dt.datetime.now().hour, dt.datetime.now().minute, dt.datetime.now().second)
         output_name = 'orderparameter_info_' + time_tag + '.out'
         g = open(output_name, 'w')
 
         for i in range(len(output_save)):
             temp = str(output_save[i][0]) + '\t' + str(output_save[i][1]) + '\t' + str(output_save[i][2])
             for j in range(len(output_save[i][3])):
-                temp += '\t' + str(output_save[i][3][j])
+                temp += '\t' + str(output_save[i][3][j]) + '\t' + str(output_save[i][4][j])
             temp += '\n'
             g.write(temp)
         g.close()
 
 
-        ### step 4: merge orderpara_info into hopping_info
+        ### step 4: merge orderpara_info into hopping_info and replace it 
 
         self.obtain_final_info()
 
