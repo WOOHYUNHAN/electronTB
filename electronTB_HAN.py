@@ -183,7 +183,7 @@ class electronTB:
                         phase_factor = np.exp(np.vdot(r, q) * 1j)
                         h_local += proper_hopping_info[k][1] * phase_factor
                     h[i, j] += h_local
-                    h[j,i] += h_local.conj()
+                    h[j,i] += np.conjugate(h_local)
                 if i  == j:
                     proper_hopping_info = self.find_hopping_for_pair(i,j)
                     h_local = 0.0+0.0j
@@ -534,7 +534,8 @@ class ManybodyInteraction_MFT:
             elif self.orderpara_type_info[i][3] == 'complex' or self.orderpara_type_info[i][3] == 'Complex' or self.orderpara_type_info[i][3] == 'COMPLEX':
                 temp = np.random.rand() + 1.0j*np.random.rand()
                 initial_random_orderpara_set.append(temp)   
-        initial_random_orderpara_set = np.random.rand(self.num_orderpara)    
+        initial_random_orderpara_set = np.random.rand(self.num_orderpara)
+        #initial_random_orderpara_set = [0.5, 0.5, 0.0j, 0.0j, 0.0j, 0.0j, 0.0j, 0.0j]    
 
         q_vec_list = self.get_qpoint_mesh(q_point_mesh)
 
