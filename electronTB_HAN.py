@@ -199,6 +199,63 @@ class electronTB:
         hamiltonian = (h+ h.conj().transpose()) / 2.0 
 
         return hamiltonian
+    
+    def get_electron_eigval_mesh(self, qmesh):
+        if self.dimension != len(qmesh):
+            print 'Check either dimension or q_point_mesh'
+            return 0
+        
+        q_vec_list= []
+
+        if self.dimension ==2:
+            for i in range(int(qmesh[0])):
+                for j in range(int(qmesh[1])):
+                    qtemp = [0.0 + i*(1.0/int(qmesh[0])), 0.0 + j*(1.0/int(qmesh[1]))]
+                    q_vec_list.append(qtemp)
+        if self.dimension ==3:
+            for i in range(int(qmesh[0])):
+                for j in range(int(qmesh[1])):
+                    for k in range(int(qmesh[2])):
+                        qtemp = [0.0 + i*(1.0/int(qmesh[0])), 0.0 + j*(1.0/int(qmesh[1])), 0.0 + k*(1.0/int(qmesh[2]))]
+                        q_vec_list.append(qtemp)
+
+        eigval_array = []
+        for i in range(self.num_atom):
+            eigval_array.append([])
+
+        for i in range(len(q_vec_list)):
+            #print 'Process: ' + str(i+1) +'/' + str(len(q_vec_list))
+            q_vec = q_vec_list[i]
+            H = self.construct_H_q(q_vec)
+            w1 = np.linalg.eigvalsh(H)
+            band_num = len(w1)
+            for j in range(band_num):
+                eigval_array[j].append(w1[j])
+
+        return eigval_array
+
+    def find_filling_specific_band(self, eig_array, band_index, chemical_pot, temperatue):
+        boltzman_const = 8.617343e-5 # eV/K
+        total_meshk = len(eig_array[band_index])
+        occupation_temp = 1.0 / (np.exp((np.array(eig_array[band_index]) - chemical_pot)/(boltzman_const*temperatue)) + 1)
+        filling = np.sum(occupation_temp) / total_meshk
+        return filling
+
+    def find_chemical_pot_for_specific_filling(self, eig_array, band_index, temperature, target_filling, max_steps):
+        initial_chemical_pot = np.min(eig_array[band_index])
+        chemical_pot_temp = initial_chemical_pot
+        filling = self.find_filling_specific_band(eig_array, band_index, initial_chemical_pot, temperature)
+        step = 0
+        while (np.abs(filling - target_filling) > 0.0001) and (step < max_steps):
+            delta = (target_filling - filling) * 0.001
+            chemical_pot_temp += delta
+            step += 1
+            filling = self.find_filling_specific_band(eig_array, band_index, chemical_pot_temp, temperature)
+
+            print step, chemical_pot_temp, filling
+
+
+
 
 
     def get_electron_band(self, q_path, q_spacing):
@@ -505,16 +562,24 @@ class ManybodyInteraction_MFT:
             new_orderpara_set.append(temp_order)
         return np.array(new_orderpara_set)
 
-    def calculate_total_energy(self, eigval, Fermi_energy, temperature):
+    def calculate_total_energy(self, eigval, Fermi_energy, temperature, orderpara):
         beta = 1.0 / (temperature * self.boltzman_const)
         degeneracy = 2.0 / self.spin # spinor = True --> degeneracy = 1 spinor False --> degeneracy = 2
         num_mesh = len(eigval)
         num_eig = len(eigval[0])
         total_energy = 0
+        ##########################
         for i in range(num_eig):
             for j in range(num_mesh):
                 total_energy += degeneracy * eigval[j][i] * (1.0 / (1.0 + np.exp(beta * (eigval[j][i]-Fermi_energy))))
         total_energy = total_energy / num_mesh
+
+        ##########################
+        for i in range(num_eig):
+            pass
+
+
+
         return total_energy
 
     def impose_constraints(self):
@@ -523,7 +588,7 @@ class ManybodyInteraction_MFT:
         '''
         return 0
 
-    def sc_solver(self, q_point_mesh, max_steps, threshold, filling_factor, temperature):
+    def sc_solver(self, q_point_mesh, max_steps, threshold, filling_factor, temperature, mixing_ratio):
         ### step 1: prepare random order parameters
         self.num_orderpara = len(self.orderpara_type_info)
         initial_random_orderpara_set = []
@@ -535,7 +600,7 @@ class ManybodyInteraction_MFT:
                 temp = np.random.rand() + 1.0j*np.random.rand()
                 initial_random_orderpara_set.append(temp)   
         initial_random_orderpara_set = np.random.rand(self.num_orderpara)
-        #initial_random_orderpara_set = [0.5, 0.5, 0.0j, 0.0j, 0.0j, 0.0j, 0.0j, 0.0j]    
+        initial_random_orderpara_set = np.array([0.5, 0.5, 1.0j, 1.0j, 1.0j, -1.0j, -1.0j, -1.0j])
 
         q_vec_list = self.get_qpoint_mesh(q_point_mesh)
 
@@ -577,7 +642,7 @@ class ManybodyInteraction_MFT:
 
             ### calculate total energy
 
-            total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature)
+            total_energy = self.calculate_total_energy(eigval, Fermi_energy, temperature,old_orderpara_set)
             #print total_energy
 
             #output_save.append([sc_index, Fermi_energy, total_energy, old_orderpara_set])
@@ -615,8 +680,8 @@ class ManybodyInteraction_MFT:
             #next_orderpara_set_real = np.real(old_orderpara_set) * (1.0 - np.real(error)) + np.real(new_orderpara_set) * np.real(error)
             #next_orderpara_set_imag = np.imag(old_orderpara_set) * (1.0 - np.imag(error)) + np.imag(new_orderpara_set) * np.imag(error)
             #print next_orderpara_set_real, next_orderpara_set_imag
-            #next_orderpara_set = next_orderpara_set_real + 1.j * next_orderpara_set_imag
-            next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
+            #next_orderpara_set = old_orderpara_set * (1.0-np.absolute(error)) + new_orderpara_set * np.absolute(error)
+            next_orderpara_set = old_orderpara_set * (1.0 - mixing_ratio) + new_orderpara_set * mixing_ratio
 
             old_orderpara_set = next_orderpara_set
             sc_index += 1
